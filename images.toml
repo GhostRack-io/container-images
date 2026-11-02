@@ -27,7 +27,7 @@ display_name = "Debian 13"
 family = "debian"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/debian:13@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+base = "docker.io/library/debian:13@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -38,7 +38,7 @@ display_name = "Debian 12"
 family = "debian"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/debian:12@sha256:2c037a04925515fdd6ea85ea14a682d0e79931f5e9f5d07b6dbfc6ba12f9e858"
+base = "docker.io/library/debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -49,7 +49,7 @@ display_name = "Ubuntu 26.04"
 family = "ubuntu"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+base = "docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -60,7 +60,7 @@ display_name = "Ubuntu 24.04"
 family = "ubuntu"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac"
+base = "docker.io/library/ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -71,7 +71,7 @@ display_name = "Ubuntu 22.04"
 family = "ubuntu"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"
+base = "docker.io/library/ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -82,7 +82,7 @@ display_name = "Alpine Linux 3.24"
 family = "alpine"
 init = "openrc"
 stop_signal = 12
-base = "docker.io/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+base = "docker.io/library/alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
@@ -115,7 +115,7 @@ display_name = "AlmaLinux 10"
 family = "rhel"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/almalinux:10@sha256:838c2fafefb1a8a0d7f8cdbc3b0551c2a2b1eb0cd87aad6d62aecadb18311f1b"
+base = "docker.io/library/almalinux:10@sha256:5a4b41a427c9717be8f4ac2a32aa22efbae5f9124fbcb79a6765394f312acfe8"
 minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 3
 
@@ -126,6 +126,6 @@ display_name = "AlmaLinux 9"
 family = "rhel"
 init = "systemd"
 stop_signal = 37
-base = "docker.io/library/almalinux:9@sha256:9819dc675b67b595c2b59e42be7763fca1a8bb217fa5944e04daa22e9a64db16"
+base = "docker.io/library/almalinux:9@sha256:245f8aab832fe800aa42bdab5fad75ebbd8e0b4c9f24820a83c638b177857ae2"
 minimum_memory_bytes = 536_870_912 # 512 MiB
 x86_64_level = 2
