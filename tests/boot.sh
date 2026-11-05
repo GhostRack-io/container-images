@@ -316,6 +316,9 @@ PYTHON
 check_instance() {
     local name=$1 init=$2 hostname=$3 mirrors=${4:-} failed
     local before=${image_failures}
+    if grep -a -q -F 'Directory /run/lock to mount over is not empty' "${case_dir}/serial.log"; then
+        fail "${name}: /run/lock was populated before its runtime mount"
+    fi
     [[ $(value state) == running ]] || fail "${name}: the init's state is $(value state), not running"
     failed=$(sed -n 's/^failed //p' "${case_dir}/inside.txt" | tr '\n' ' ')
     [[ -z ${failed} ]] || fail "${name}: failed: ${failed}"

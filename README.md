@@ -71,6 +71,11 @@ Ubuntu, `sshd-keygen@.service` on Rocky and Alma, sshd's OpenRC service on
 Alpine), and systemd makes its machine ID; both are kept on the instance's
 disk from then on.
 
+Systemd images leave `/run/lock` empty at build time. Its runtime directories
+are created by tmpfiles after early mounts, so the platform's `/run` seeding
+does not trigger a nonempty mountpoint warning. Structure and boot checks guard
+against shipping build-time lock state.
+
 ## Building and testing
 
 ```sh

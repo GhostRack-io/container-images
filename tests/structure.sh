@@ -70,6 +70,9 @@ done
 [ -f /etc/ssl/certs/ca-certificates.crt ] || [ -f /etc/pki/tls/certs/ca-bundle.crt ] || fail "no CA certificates"
 [ -e /usr/share/zoneinfo/UTC ] || fail "no time zone data"
 if [ "${init}" = systemd ]; then
+    if [ -d /run/lock ] && [ ! -L /run/lock ] && [ -n "$(find /run/lock -mindepth 1 -print -quit)" ]; then
+        fail "/run/lock contains build-time runtime state"
+    fi
     for unit in "$@"; do
         [ "$(readlink "/etc/systemd/system/${unit}")" = /dev/null ] || fail "${unit} is not masked"
     done

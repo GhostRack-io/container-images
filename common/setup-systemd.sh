@@ -50,6 +50,13 @@ case ${family} in
         ;;
 esac
 
+# Package setup leaves runtime subdirectories such as lock/subsys behind.
+# The platform seeds /run before systemd mounts /run/lock; tmpfiles recreates
+# these directories after the mount, so keep its image mountpoint empty.
+if [ -d /run/lock ] && [ ! -L /run/lock ]; then
+    find /run/lock -mindepth 1 -delete
+fi
+
 # Every instance makes its own host keys and machine ID at its first boot.
 rm -f /etc/ssh/ssh_host_*
 : > /etc/machine-id
