@@ -316,7 +316,9 @@ PYTHON
 check_instance() {
     local name=$1 init=$2 hostname=$3 mirrors=${4:-} failed
     local before=${image_failures}
-    if grep -a -q -F 'Directory /run/lock to mount over is not empty' "${case_dir}/serial.log"; then
+    # systemd writes to the console (hvc.log); the init and the kernel to
+    # the serial port.
+    if grep -a -q -s -F 'Directory /run/lock to mount over is not empty' "${case_dir}/hvc.log" "${case_dir}/serial.log"; then
         fail "${name}: /run/lock was populated before its runtime mount"
     fi
     [[ $(value state) == running ]] || fail "${name}: the init's state is $(value state), not running"
@@ -351,11 +353,12 @@ check_instance() {
             fail "${name}: the state after the timers' services is $(value state_after_timers)"
         fi
     fi
-    grep -a -q 'gigahost-init: report {"v":3,"event":"started","pid":[0-9]*,' "${case_dir}/serial.log" \
+    # The init's prefix is ghostrack-init from kernel-linux gh8 on.
+    grep -a -q -E '(gigahost|ghostrack)-init: report \{"v":3,"event":"started","pid":[0-9]+,' "${case_dir}/serial.log" \
         || fail "${name}: no started report"
     local reports
     reports=$(grep -a -c '"event":"exited"' "${case_dir}/serial.log" || true)
-    if [[ ${reports} != 1 ]] || ! grep -a -q -F 'gigahost-init: report {"v":3,"event":"exited","code":null,"signal":2,"reason":"poweroff"}' "${case_dir}/serial.log"; then
+    if [[ ${reports} != 1 ]] || ! grep -a -q -E '(gigahost|ghostrack)-init: report \{"v":3,"event":"exited","code":null,"signal":2,"reason":"poweroff"\}' "${case_dir}/serial.log"; then
         fail "${name}: not one poweroff report: $(grep -a -o '"event":"exited".*' "${case_dir}/serial.log" | tr '\n' ' ')"
     fi
     echo "  ${name}: $(value state) at $(value boot_seconds) s (uptime $(value uptime) s at login), MemAvailable $(value mem_available_kib) KiB"
