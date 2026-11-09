@@ -137,7 +137,7 @@ Each entry of `images.json` has the image's `name`, `version`,
 `ghcr.io/ghostrack-io/<name>@sha256:<hex>`, repository and digest
 without a tag, which names one image for good.
 
-A weekly [workflow](.github/workflows/update-bases.yml) runs
+A monthly [workflow](.github/workflows/update-bases.yml) runs
 `scripts/update-bases.sh`, which moves each base to the digest its tag
 names now (and Alpine to its current release), and opens a pull request
 when one moved.

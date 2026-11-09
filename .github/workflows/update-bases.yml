@@ -1,4 +1,4 @@
-# Weekly: resolves each base image's tag to its current digest
+# Monthly: resolves each base image's tag to its current digest
 # (scripts/update-bases.sh) and opens a pull request when one moved, so the
 # images are built on the new bases once it is merged. (CI's own weekly
 # run rebuilds the images with their distributions' updates in between.)
@@ -6,7 +6,7 @@ name: Update bases
 
 on:
   schedule:
-    - cron: "23 5 * * 1"
+    - cron: "23 5 1 * *"
   workflow_dispatch:
 
 permissions:
