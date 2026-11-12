@@ -6,6 +6,12 @@
 # the digests pushed) to a release images-<YYYYMMDD>-<n>, the same n. The
 # boot test (tests/boot.sh) needs KVM and a kernel-linux build, and does
 # not run here.
+#
+# One failed build stops the publish and the release for every image, the
+# rolling ones (Arch Linux, Alpine edge) included, on purpose: images.json
+# is the complete set of stock images, which the platform imports whole (a
+# release without an image drops it from the stock list), and a release
+# takes its images' dated tags from one run. Rerun the failed jobs.
 name: CI
 
 on:

@@ -147,7 +147,10 @@ pushes the tested images to `ghcr.io/ghostrack-io/<name>:<version>` and
 artifact and as the asset of a release `images-<YYYYMMDD>-<n>`, with the
 same `n`: one more than the day's highest release. A dated tag that a
 release names is never pushed again (a run that fails before its release
-leaves dated tags that no release names, and the next run reuses them). The boot test does not run in CI: it
+leaves dated tags that no release names, and the next run reuses them). A
+build that fails stops the publish and the release for every image, the
+rolling ones included: the platform imports a release as its complete set of
+stock images, so rerun the failed jobs. The boot test does not run in CI: it
 needs KVM and a kernel-linux build.
 
 Each entry of `images.json` has the image's `name`, `version`,
