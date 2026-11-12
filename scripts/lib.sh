@@ -13,7 +13,7 @@ import re, sys, tomllib
 FIELDS = ["name", "version", "family", "init", "stop_signal", "base", "display_name",
           "minimum_memory_bytes", "x86_64_level"]
 MIB = 1048576
-INITS = {"systemd": ("debian", "ubuntu", "rhel"), "openrc": ("alpine",)}
+INITS = {"systemd": ("debian", "ubuntu", "rhel", "arch"), "openrc": ("alpine",)}
 STOP = {"systemd": 37, "openrc": 12}
 
 def die(message):
@@ -28,7 +28,7 @@ for image in images:
     if sorted(image) != sorted(FIELDS):
         die(f"an entry has the fields {sorted(image)}, not {sorted(FIELDS)}")
     key = f"{image['name']}:{image['version']}"
-    if not re.fullmatch(r"[a-z0-9]+", image["name"]) or not re.fullmatch(r"[0-9][0-9.]*", image["version"]):
+    if not re.fullmatch(r"[a-z0-9]+", image["name"]) or not re.fullmatch(r"[0-9][0-9.]*|edge|rolling", image["version"]):
         die(f"{key}: the name or the version is not a plain tag")
     if key in seen:
         die(f"{key} is listed twice")

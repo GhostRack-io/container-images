@@ -4,7 +4,7 @@
 # boot, and nothing of an instance's own (host keys, machine ID) left in
 # the image.
 #
-#   setup-systemd.sh FAMILY     (debian, ubuntu or rhel)
+#   setup-systemd.sh FAMILY     (debian, ubuntu, rhel or arch)
 set -eu
 family=$1
 build=$(dirname "$0")
@@ -43,6 +43,16 @@ case ${family} in
         if [ -e /usr/lib/systemd/system/dnf-makecache.timer ]; then
             systemctl disable dnf-makecache.timer
         fi
+        ;;
+    arch)
+        # sshd.service wants sshdgenkeys.service, which makes the host keys
+        # when they are missing.
+        systemctl enable sshd.service cronie.service
+        # The build's pacman keyring holds a private master key; an image
+        # ships none. This unit makes the instance's own at its first boot.
+        install -m 0644 "${build}/ghostrack-pacman-init.service" /etc/systemd/system/
+        systemctl enable ghostrack-pacman-init.service
+        rm -rf /etc/pacman.d/gnupg
         ;;
     *)
         echo "setup-systemd.sh: unknown family ${family}" >&2

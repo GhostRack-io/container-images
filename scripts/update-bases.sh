@@ -1,8 +1,10 @@
 #!/bin/bash
 # Resolves each base of images.toml to the digest its tag names on Docker
 # Hub now, and rewrites images.toml when one moved. Alpine follows its
-# current release: when a newer one is out, its entry's version, display
-# name and base tag move to it.
+# current release: when a newer one is out, the entry of a release (a
+# MAJOR.MINOR tag) moves its version, display name and base tag to it.
+# Alpine edge, and any other entry whose tag is not a release, keeps its
+# tag and only its digest moves.
 #
 #   scripts/update-bases.sh
 #
@@ -51,7 +53,7 @@ while IFS=$'\t' read -r -u 3 name version family _init _stop base display_name _
     tag=${path##*:}
     new_version=${version}
     new_display=${display_name}
-    if [[ ${family} == alpine ]]; then
+    if [[ ${family} == alpine && ${tag} =~ ^[0-9]+\.[0-9]+$ ]]; then
         release=$(latest_release "${repository}")
         if [[ ${release} != "${tag}" ]]; then
             tag=${release}

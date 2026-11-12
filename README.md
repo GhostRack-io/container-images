@@ -1,7 +1,7 @@
 # container-images
 
 Stock images for container virtual machines that behave like a small VM:
-the official Debian, Ubuntu, Alpine, Rocky Linux and AlmaLinux images with
+the official Debian, Ubuntu, Alpine, Arch Linux, Rocky Linux and AlmaLinux images with
 their own init system (systemd, or OpenRC on Alpine) and OpenSSH, ready to
 run under the init of
 [kernel-linux](https://github.com/ghostrack-io/kernel-linux) (interface
@@ -18,10 +18,15 @@ version 3, `init_system`). They are published on GHCR as
 | Ubuntu 24.04 | `ubuntu:24.04` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 1 |
 | Ubuntu 22.04 | `ubuntu:22.04` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 1 |
 | Alpine Linux (its current release) | `alpine:<release>` | busybox init running OpenRC | 12 (`SIGUSR2`) | 256 MiB | 1 |
+| Alpine Linux edge | `alpine:edge` | busybox init running OpenRC | 12 (`SIGUSR2`) | 256 MiB | 1 |
 | Rocky Linux 10 | `rockylinux:10` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 3 |
 | Rocky Linux 9 | `rockylinux:9` | systemd | 37 (`SIGRTMIN+3`) | 512 MiB | 2 |
 | AlmaLinux 10 | `almalinux:10` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 3 |
 | AlmaLinux 9 | `almalinux:9` | systemd | 37 (`SIGRTMIN+3`) | 512 MiB | 2 |
+| Arch Linux | `archlinux:rolling` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 1 |
+
+Arch Linux is a rolling release, and Alpine Linux edge is Alpine's
+development branch; CI rebuilds both weekly, with the other images.
 
 [`images.toml`](images.toml) lists them with their bases, the official
 images on Docker Hub, pinned by digest. Each image's command is
@@ -67,9 +72,12 @@ SSH: root logs in with the keys the platform writes to
 Per instance: an image holds no SSH host keys and an empty
 `/etc/machine-id`. Each instance makes its own host keys at its first
 boot, before sshd starts (`ghostrack-ssh-host-keys.service` on Debian and
-Ubuntu, `sshd-keygen@.service` on Rocky and Alma, sshd's OpenRC service on
-Alpine), and systemd makes its machine ID; both are kept on the instance's
-disk from then on.
+Ubuntu, `sshd-keygen@.service` on Rocky and Alma, `sshdgenkeys.service` on
+Arch, sshd's OpenRC service on Alpine), and systemd makes its machine ID;
+both are kept on the instance's disk from then on. An Arch image holds no
+pacman keyring either: `ghostrack-pacman-init.service` makes the instance's
+own at its first boot (`pacman-key --init` and `--populate archlinux`), so
+no two instances share its private master key.
 
 Systemd images leave `/run/lock` empty at build time. Its runtime directories
 are created by tmpfiles after early mounts, so the platform's `/run` seeding
@@ -87,7 +95,7 @@ tests/boot.sh --kernel DIR [NAME[:VERSION]...]
 A bare name selects every version of it; no name selects every image.
 
 `tests/structure.sh` checks that an image holds no host key, machine ID,
-random seed or password hash, that the SSH policy is in force
+random seed, pacman keyring or password hash, that the SSH policy is in force
 (`sshd -T`, after `ssh-keygen -A` in a throwaway container), the masked
 units, the services enabled at boot, the init at `/sbin/init`, the
 packages above, that its C library and init need the x86-64 level
@@ -106,9 +114,9 @@ second on QEMU's oldest CPU model of the image's x86-64 level (`kvm64`,
 started), accept a throwaway key for root over SSH, run cron and
 `crontab`, keep the platform's address, route and name server, and end
 with a `poweroff` report when powered off from inside; the two instances
-must have different host keys and machine IDs, and the first must keep
-its own across its two boots. The last boot also reaches the package
-mirrors (`apt-get update`, `dnf makecache`, `apk update`), finds no
+must have different host keys, machine IDs and (Arch) pacman keyrings,
+and the first must keep its own across its two boots. The last boot also reaches the package
+mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`), finds no
 package update pending (an image built days ago fails here: rebuild it),
 and starts the service of every active systemd timer, each of which must
 succeed with the system still `running`. It reports each image's boot
@@ -139,13 +147,13 @@ without a tag, which names one image for good.
 
 A monthly [workflow](.github/workflows/update-bases.yml) runs
 `scripts/update-bases.sh`, which moves each base to the digest its tag
-names now (and Alpine to its current release), and opens a pull request
+names now (and a released Alpine to its current release; Alpine edge keeps its tag), and opens a pull request
 when one moved.
 
 For the maintainer:
 
 - A package GHCR creates on a workflow's first push may start private.
-  Set each package (`debian`, `ubuntu`, `alpine`, `rockylinux`,
+  Set each package (`debian`, `ubuntu`, `alpine`, `archlinux`, `rockylinux`,
   `almalinux`) public once, in its package settings; the images are meant
   to be pulled without credentials.
 - GitHub turns a public repository's scheduled workflows off after 60

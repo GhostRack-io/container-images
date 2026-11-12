@@ -5,7 +5,7 @@
 # failed, sshd accepts the account's key for root, cron and the package
 # mirrors work, no package update is pending, the services of the image's
 # timers run, the network and DNS are the ones the platform's init set up,
-# each instance makes its own host keys and machine ID and keeps them, and
+# each instance makes its own host keys, machine ID and (Arch) pacman keyring and keeps them, and
 # a poweroff inside ends the machine with a poweroff report.
 #
 #   tests/boot.sh --kernel DIR [NAME[:VERSION]...]   (every image without names)
@@ -170,7 +170,7 @@ if [ "${init}" = systemd ]; then
     echo "state ${state}"
     echo "boot_seconds $(systemctl show -p FinishTimestampMonotonic --value | awk "{ printf \"%.1f\", \$1 / 1000000 }")"
     systemctl list-units --failed --no-legend --plain 2> /dev/null | awk "{ print \"failed\", \$1 }"
-    for unit in cron.service crond.service; do
+    for unit in cron.service crond.service cronie.service; do
         if systemctl cat "${unit}" > /dev/null 2>&1; then
             echo "cron_daemon $(systemctl is-active "${unit}")"
         fi
@@ -194,23 +194,29 @@ fi
 echo "uptime $(cut -d" " -f1 /proc/uptime)"
 echo "pid1 $(cat /proc/1/comm)"
 echo "mem_available_kib $(awk "/^MemAvailable:/ { print \$2 }" /proc/meminfo)"
-if printf "@daily true\n" | crontab - && crontab -l | grep -q -x "@daily true" && crontab -r; then
+if printf "@daily true\n" | crontab - 2> /dev/null && crontab -l 2> /dev/null | grep -q -x "@daily true" && crontab -r 2> /dev/null; then
     echo "crontab ok"
 else
     echo "crontab fail"
 fi
-echo "hostname $(hostname)"
+echo "hostname $(cat /proc/sys/kernel/hostname)"
 echo "eth0 $(ip -4 -o addr show dev eth0 | awk "{ print \$4 }" | tr "\n" " ")"
 echo "route $(ip -4 route show default | tr "\n" " ")"
 echo "dns $(grep "^nameserver" /etc/resolv.conf | awk "{ print \$2 }" | tr "\n" " ")"
 echo "hostkey $(ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub | awk "{ print \$2 }")"
 echo "machine_id $(cat /etc/machine-id 2> /dev/null)"
+if command -v pacman-key > /dev/null; then
+    echo "pacman_secret $(gpg --homedir /etc/pacman.d/gnupg --list-secret-keys --with-colons 2> /dev/null | awk -F: "/^fpr/ { print \$10; exit }")"
+fi
 if [ "${mirrors}" = mirrors ]; then
     if command -v apt-get > /dev/null; then
         apt-get -q -q update > /dev/null 2>&1 && echo "mirrors ok" || echo "mirrors fail"
         if simulated=$(apt-get -s -q dist-upgrade 2> /dev/null); then
             echo "pending_updates $(echo "${simulated}" | grep -c "^Inst ")"
         fi
+    elif command -v pacman > /dev/null; then
+        pacman -Sy --noconfirm > /dev/null 2>&1 && echo "mirrors ok" || echo "mirrors fail"
+        echo "pending_updates $(pacman -Qu 2> /dev/null | wc -l)"
     elif command -v dnf > /dev/null; then
         dnf -q -y makecache > /dev/null 2>&1 && echo "mirrors ok" || echo "mirrors fail"
         listed=$(dnf -q check-update 2> /dev/null)
@@ -335,6 +341,9 @@ check_instance() {
     [[ $(value route) == "default via 10.115.0.1 dev eth0"* ]] || fail "${name}: the default route is $(value route)"
     [[ $(value dns) == 10.115.0.3 ]] || fail "${name}: the name servers are $(value dns)"
     [[ $(value hostkey) == SHA256:* ]] || fail "${name}: no ed25519 host key"
+    if [[ ${family} == arch && ! $(value pacman_secret) =~ ^[0-9A-F]{40}$ ]]; then
+        fail "${name}: the first-boot unit made no pacman keyring (secret key: '$(value pacman_secret)')"
+    fi
     if [[ ${init} == systemd && ! $(value machine_id) =~ ^[0-9a-f]{32}$ ]]; then
         fail "${name}: the machine ID is '$(value machine_id)'"
     fi
@@ -375,7 +384,7 @@ show_logs() {
 }
 
 summary=()
-while IFS=$'\t' read -r -u 3 name version _family init stop_signal _base display_name memory level; do
+while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level; do
     image=$(image_tag "${name}" "${version}")
     memory_mib=$((memory / 1048576))
     image_failures=0
@@ -395,14 +404,21 @@ while IFS=$'\t' read -r -u 3 name version _family init stop_signal _base display
     mem_mib=$(( ${mem_kib:-0} / 1024 ))
     a_key=$(value hostkey)
     a_id=$(value machine_id)
+    a_pacman=$(value pacman_secret)
     boot_instance "${slug}-b" "${work}/${slug}-b.img" "${memory_mib}" "$(cpu_model "${level}")" "${init}" "${stop_signal}" "${slug}-b"
     [[ -n ${a_key} && $(value hostkey) != "${a_key}" ]] || fail "${slug}: two instances have the same host key"
     if [[ ${init} == systemd ]]; then
         [[ -n ${a_id} && $(value machine_id) != "${a_id}" ]] || fail "${slug}: two instances have the same machine ID"
     fi
+    if [[ ${family} == arch ]]; then
+        [[ -n ${a_pacman} && $(value pacman_secret) != "${a_pacman}" ]] || fail "${slug}: two instances have the same pacman keyring"
+    fi
     boot_instance "${slug}-a-again" "${work}/${slug}-a.img" "${memory_mib}" host "${init}" "${stop_signal}" "${slug}-a" mirrors
     [[ $(value hostkey) == "${a_key}" ]] || fail "${slug}: the host key changed between two boots of one instance"
     [[ $(value machine_id) == "${a_id}" ]] || fail "${slug}: the machine ID changed between two boots of one instance"
+    if [[ ${family} == arch ]]; then
+        [[ $(value pacman_secret) == "${a_pacman}" ]] || fail "${slug}: the pacman keyring changed between two boots of one instance"
+    fi
     rm -f "${work}/${slug}-a.img" "${work}/${slug}-b.img"
     rm -rf "${a_dir}"
 

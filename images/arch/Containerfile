@@ -1,0 +1,35 @@
+# Arch Linux with systemd and OpenSSH, a small VM's packages, for container
+# machines (README.md). scripts/build.sh passes the build arguments from
+# images.toml; BASE (required) is the official image by digest.
+ARG BASE
+FROM ${BASE}
+ARG VERSION
+ARG TITLE
+ARG REVISION=unknown
+ARG MINIMUM_MEMORY_BYTES
+ARG X86_64_LEVEL
+# The base's packages are upgraded first, so an image holds its
+# distribution's updates of the day it is built (CI rebuilds them weekly).
+# The keyring below is the build's own: setup-systemd.sh removes it, and
+# each instance makes its own at its first boot.
+RUN --mount=type=bind,source=common,target=/tmp/ghostrack-build \
+    set -eu; \
+    if [ ! -d /etc/pacman.d/gnupg ] || [ -z "$(ls -A /etc/pacman.d/gnupg)" ]; then \
+        pacman-key --init; \
+        pacman-key --populate archlinux; \
+    fi; \
+    pacman -Syu --noconfirm --needed; \
+    pacman -S --noconfirm --needed \
+        openssh iproute2 iputils ca-certificates curl less vi procps-ng sudo cronie tzdata; \
+    sh /tmp/ghostrack-build/setup-systemd.sh arch; \
+    rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
+LABEL org.opencontainers.image.source="https://github.com/ghostrack-io/container-images" \
+      org.opencontainers.image.title="${TITLE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      io.ghostrack.init-system="systemd" \
+      io.ghostrack.ssh-user="root" \
+      io.ghostrack.minimum-memory-bytes="${MINIMUM_MEMORY_BYTES}" \
+      io.ghostrack.x86-64-level="${X86_64_LEVEL}"
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

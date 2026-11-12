@@ -1,0 +1,14 @@
+[Unit]
+Description=Make this instance's pacman keyring
+Documentation=https://github.com/ghostrack-io/container-images
+After=local-fs.target
+ConditionPathExists=!/etc/pacman.d/gnupg
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate archlinux
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

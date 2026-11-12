@@ -34,12 +34,15 @@ fail() {
 }
 
 # The checks inside the image, as POSIX sh: one "FAIL ..." line each that
-# fails. The arguments: the init system, then the units to see masked.
+# fails. The arguments: the init system, the family, the version, then the
+# units to see masked.
 # shellcheck disable=SC2016 # expanded by the image's shell
 inside='
 set -u
 init=$1
-shift
+family=$2
+version=$3
+shift 3
 fail() { echo "FAIL $*"; }
 for key in /etc/ssh/ssh_host_*; do
     [ -e "${key}" ] && fail "host key ${key} in the image"
@@ -78,6 +81,8 @@ if [ "${init}" = systemd ]; then
     done
     if [ -e /etc/systemd/system/ghostrack-ssh-host-keys.service ]; then
         enabled="ghostrack-ssh-host-keys.service ssh.service cron.service"
+    elif [ "${family}" = arch ]; then
+        enabled="sshd.service cronie.service ghostrack-pacman-init.service"
     else
         enabled="sshd.service crond.service"
     fi
@@ -99,6 +104,19 @@ else
         [ -e "${level}/networking" ] && fail "networking is in the runlevel ${level##*/}"
     done
     grep -q "^root:[!]" /etc/shadow && fail "root is locked, which refuses its keys"
+    # Alpine edge stays on edge; a release stays on its release.
+    if [ "${version}" = edge ]; then
+        grep -v "^#" /etc/apk/repositories | grep -q -E "/(v[0-9]+[.][0-9]+|latest-stable)/" && fail "/etc/apk/repositories names a release"
+        grep -v "^#" /etc/apk/repositories | grep -q "/edge/" || fail "/etc/apk/repositories does not name edge"
+    fi
+fi
+if [ "${family}" = arch ]; then
+    # Each instance makes its own pacman keyring, whose master key is
+    # private: the image holds none, no package cache and no sync databases.
+    [ ! -e /etc/pacman.d/gnupg ] || fail "/etc/pacman.d/gnupg is in the image"
+    if [ -n "$(ls -A /var/cache/pacman/pkg 2> /dev/null)" ]; then fail "/var/cache/pacman/pkg is not empty"; fi
+    if [ -n "$(ls -A /var/lib/pacman/sync 2> /dev/null)" ]; then fail "/var/lib/pacman/sync is not empty"; fi
+    grep -q "^ConditionPathExists=!/etc/pacman.d/gnupg" /etc/systemd/system/ghostrack-pacman-init.service || fail "the pacman keyring unit is not conditioned on a missing keyring"
 fi
 # sshd accepts its configuration once an instance has made its keys, and
 # the policy is in force.
@@ -106,7 +124,8 @@ ssh-keygen -A > /dev/null
 mkdir -p /run/sshd
 sshd=$(command -v sshd || echo /usr/sbin/sshd)
 "${sshd}" -t || fail "sshd -t refuses the configuration"
-config=$("${sshd}" -T 2> /dev/null)
+# (OpenSSH 10.6 prints the keywords in their usual case.)
+config=$("${sshd}" -T 2> /dev/null | tr "[:upper:]" "[:lower:]")
 echo "${config}" | grep -q -x -E "permitrootlogin (prohibit-password|without-password)" || fail "root may log in with a password"
 echo "${config}" | grep -q -x "passwordauthentication no" || fail "password authentication is on"
 echo "${config}" | grep -q -x "kbdinteractiveauthentication no" || fail "keyboard-interactive authentication is on"
@@ -129,14 +148,16 @@ needed_level() {
     needed=
     while IFS= read -r path; do
         podman run --rm --network none --entrypoint /bin/cat "$1" "${path}" < /dev/null > "${work}/object" 2> /dev/null || return 1
-        notes=$(readelf -n "${work}/object") || return 1
+        # (readelf exits 1 on the dlopen notes of a recent systemd.)
+        notes=$(readelf -n "${work}/object" 2> /dev/null || true)
+        [[ -n ${notes} ]] || return 1
         needed+=$(sed -n 's/.*x86 ISA needed: //p' <<< "${notes}" | grep -o -E 'x86-64-v[0-9]' | sed 's/^x86-64-v//' || true)$'\n'
     done <<< "${paths}"
     needed=$(grep -E '^[0-9]+$' <<< "${needed}" | sort -n | tail -n 1 || true)
     echo "${needed:-1}"
 }
 
-while IFS=$'\t' read -r -u 3 name version _family init stop_signal _base display_name memory level; do
+while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level; do
     image=${STRUCTURE_IMAGE:-$(image_tag "${name}" "${version}")}
     before=${failures}
     echo "structure.sh: ${image} (${display_name})"
@@ -184,7 +205,7 @@ PYTHON
         fail "the C library or the init needs x86-64 level ${needed}; images.toml says ${level}"
     fi
     # shellcheck disable=SC2086 # one unit a word
-    inside_out=$(podman run --rm --network none --entrypoint /bin/sh "${image}" -c "${inside}" sh "${init}" ${masked_units} 2>&1) \
+    inside_out=$(podman run --rm --network none --entrypoint /bin/sh "${image}" -c "${inside}" sh "${init}" "${family}" "${version}" ${masked_units} 2>&1) \
         || fail "the checks inside the image did not run: ${inside_out}"
     while IFS= read -r line; do
         case ${line} in

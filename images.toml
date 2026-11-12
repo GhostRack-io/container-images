@@ -10,7 +10,7 @@
 #                 number: 37 (SIGRTMIN+3) for systemd, 12 (SIGUSR2) for
 #                 busybox init running OpenRC
 #   base          the official image, by tag and digest; scripts/update-bases.sh
-#                 moves the digests (and Alpine's version to its current release)
+#                 moves the digests (and a released Alpine's version to its current release)
 #   minimum_memory_bytes
 #                 the smallest memory an instance of the image is given: its
 #                 package manager works and its timers' services run in it
@@ -87,6 +87,17 @@ minimum_memory_bytes = 268_435_456 # 256 MiB
 x86_64_level = 1
 
 [[image]]
+name = "alpine"
+version = "edge"
+display_name = "Alpine Linux edge"
+family = "alpine"
+init = "openrc"
+stop_signal = 12
+base = "docker.io/library/alpine:edge@sha256:020dfcbaaf4cc1078bf2d9c7ba31a8466e334061dcd2f248001d68f79e52c000"
+minimum_memory_bytes = 268_435_456 # 256 MiB
+x86_64_level = 1
+
+[[image]]
 name = "rockylinux"
 version = "10"
 display_name = "Rocky Linux 10"
@@ -129,3 +140,14 @@ stop_signal = 37
 base = "docker.io/library/almalinux:9@sha256:245f8aab832fe800aa42bdab5fad75ebbd8e0b4c9f24820a83c638b177857ae2"
 minimum_memory_bytes = 536_870_912 # 512 MiB
 x86_64_level = 2
+
+[[image]]
+name = "archlinux"
+version = "rolling"
+display_name = "Arch Linux"
+family = "arch"
+init = "systemd"
+stop_signal = 37
+base = "docker.io/library/archlinux:base@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899"
+minimum_memory_bytes = 268_435_456 # 256 MiB
+x86_64_level = 1
