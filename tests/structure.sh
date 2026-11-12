@@ -116,7 +116,29 @@ if [ "${family}" = arch ]; then
     [ ! -e /etc/pacman.d/gnupg ] || fail "/etc/pacman.d/gnupg is in the image"
     if [ -n "$(ls -A /var/cache/pacman/pkg 2> /dev/null)" ]; then fail "/var/cache/pacman/pkg is not empty"; fi
     if [ -n "$(ls -A /var/lib/pacman/sync 2> /dev/null)" ]; then fail "/var/lib/pacman/sync is not empty"; fi
-    grep -q "^ConditionPathExists=!/etc/pacman.d/gnupg" /etc/systemd/system/ghostrack-pacman-init.service || fail "the pacman keyring unit is not conditioned on a missing keyring"
+    # The unit makes the keyring once, and again after a first boot that
+    # stopped half way: pacman-key --init makes the directory before the
+    # keys. Its conditions and commands, run here, leave a complete keyring
+    # (a secret key, the stamp) over a half-made one, and the unit is
+    # skipped from then on. It runs before sshd, so that no one logs in
+    # before the keyring is there.
+    unit=/etc/systemd/system/ghostrack-pacman-init.service
+    grep -q "^Before=.*sshd.service" "${unit}" || fail "the pacman keyring unit does not run before sshd"
+    condition=$(grep "^ConditionPathExists=" "${unit}") || condition=
+    if [ -z "${condition}" ]; then
+        fail "the pacman keyring unit has no condition"
+    else
+        systemd-analyze condition "${condition}" > /dev/null 2>&1 || fail "the pacman keyring unit is skipped with no keyring"
+        mkdir -p /etc/pacman.d/gnupg
+        : > /etc/pacman.d/gnupg/half-made
+        systemd-analyze condition "${condition}" > /dev/null 2>&1 || fail "the pacman keyring unit is skipped after a first boot that stopped half way"
+        sed -n -e "s/^ExecStartPre=//p" -e "s/^ExecStart=//p" "${unit}" | while read -r command; do
+            sh -c "${command}" > /dev/null 2>&1 || fail "the pacman keyring unit fails: ${command}"
+        done
+        [ ! -e /etc/pacman.d/gnupg/half-made ] || fail "the pacman keyring unit keeps a half-made keyring"
+        [ -n "$(gpg --homedir /etc/pacman.d/gnupg --list-secret-keys --with-colons 2> /dev/null)" ] || fail "the pacman keyring unit makes no secret key"
+        if systemd-analyze condition "${condition}" > /dev/null 2>&1; then fail "the pacman keyring unit runs again after it made the keyring"; fi
+    fi
 fi
 # sshd accepts its configuration once an instance has made its keys, and
 # the policy is in force.

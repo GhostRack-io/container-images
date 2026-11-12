@@ -11,8 +11,9 @@
 #   tests/boot.sh --kernel DIR [NAME[:VERSION]...]   (every image without names)
 #
 # Three instances an image, each at the image's minimum memory
-# (images.toml): a first one and a second from fresh disks, then the first
-# again, which reaches the mirrors and starts the service of every timer.
+# (images.toml): a first one and a second from fresh disks (an Arch one
+# with a half-made pacman keyring on it), then the first again, which
+# reaches the mirrors and starts the service of every timer.
 # The second runs on the oldest CPU model of the image's x86-64 level, the
 # others on the host's CPU.
 #
@@ -394,6 +395,14 @@ while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_
     make_disk "${image}" "${work}/${slug}.img"
     cp --sparse=always "${work}/${slug}.img" "${work}/${slug}-a.img"
     mv "${work}/${slug}.img" "${work}/${slug}-b.img"
+    if [[ ${family} == arch ]]; then
+        # The second instance starts with a keyring that a first boot left
+        # half made (it stopped after pacman-key --init made the directory
+        # and some of its files): its unit makes the keyring again.
+        command -v debugfs > /dev/null || die "debugfs is not installed"
+        printf 'mkdir /etc/pacman.d/gnupg\nmkdir /etc/pacman.d/gnupg/private-keys-v1.d\nwrite /dev/null /etc/pacman.d/gnupg/pubring.kbx\n' \
+            | debugfs -w -f - "${work}/${slug}-b.img" > /dev/null
+    fi
 
     # A first instance, a second one from a fresh disk on the oldest CPU
     # the image is for, the first again.

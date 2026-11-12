@@ -2,12 +2,19 @@
 Description=Make this instance's pacman keyring
 Documentation=https://github.com/ghostrack-io/container-images
 After=local-fs.target
-ConditionPathExists=!/etc/pacman.d/gnupg
+# The first pacman command of an instance finds its keyring.
+Before=sshd.service
+# The stamp is written last. pacman-key --init makes the directory first, so
+# a first boot that stops half way (a stop, a power loss) leaves a keyring
+# without the stamp, and the next boot makes it again.
+ConditionPathExists=!/etc/pacman.d/gnupg/.ghostrack-populated
 
 [Service]
 Type=oneshot
+ExecStartPre=/usr/bin/rm -rf /etc/pacman.d/gnupg
 ExecStart=/usr/bin/pacman-key --init
 ExecStart=/usr/bin/pacman-key --populate archlinux
+ExecStart=/usr/bin/touch /etc/pacman.d/gnupg/.ghostrack-populated
 RemainAfterExit=yes
 
 [Install]

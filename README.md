@@ -76,8 +76,10 @@ Ubuntu, `sshd-keygen@.service` on Rocky and Alma, `sshdgenkeys.service` on
 Arch, sshd's OpenRC service on Alpine), and systemd makes its machine ID;
 both are kept on the instance's disk from then on. An Arch image holds no
 pacman keyring either: `ghostrack-pacman-init.service` makes the instance's
-own at its first boot (`pacman-key --init` and `--populate archlinux`), so
-no two instances share its private master key.
+own at its first boot, before sshd starts (`pacman-key --init` and
+`--populate archlinux`, then a stamp in the keyring directory, which the
+unit's condition reads: a first boot that stopped half way is made again),
+so no two instances share its private master key.
 
 Systemd images leave `/run/lock` empty at build time. Its runtime directories
 are created by tmpfiles after early mounts, so the platform's `/run` seeding
@@ -116,7 +118,10 @@ started), accept a throwaway key for root over SSH, run cron and
 `crontab`, keep the platform's address, route and name server, and end
 with a `poweroff` report when powered off from inside; the two instances
 must have different host keys, machine IDs and (Arch) pacman keyrings,
-and the first must keep its own across its two boots. The last boot also reaches the package
+and the first must keep its own across its two boots; the Arch image's
+second disk starts with a pacman keyring that a first boot left half made,
+and the instance makes it again (the test needs `debugfs`). The last boot
+also reaches the package
 mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`), finds no
 package update pending (an image built days ago fails here: rebuild it),
 and starts the service of every active systemd timer, each of which must
