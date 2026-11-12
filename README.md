@@ -90,6 +90,7 @@ against shipping build-time lock state.
 scripts/build.sh [NAME[:VERSION]...]       # podman; tags localhost/ghostrack-images/<name>:<version>
 tests/structure.sh [NAME[:VERSION]...]     # checks the built images without booting them
 tests/boot.sh --kernel DIR [NAME[:VERSION]...]
+tests/arch-stale-base.sh                   # Arch Linux from an old base
 ```
 
 A bare name selects every version of it; no name selects every image.
@@ -123,6 +124,12 @@ succeed with the system still `running`. It reports each image's boot
 time to `running`, `MemAvailable` at its minimum memory and its
 gzip-compressed size. It needs podman, `qemu-system-x86_64`, `/dev/kvm`,
 `mkfs.ext4`, `ssh` and network access.
+
+`tests/arch-stale-base.sh` builds the Arch Linux image from the official
+base of 2025-09-07 and runs `tests/structure.sh` on it. The build's upgrade
+must trust the packagers who have signed packages since, whose keys the
+base's keyring lacks (a pinned base is up to a month old when CI rebuilds
+it). It downloads about a gigabyte and is not part of CI.
 
 ## Publishing
 
