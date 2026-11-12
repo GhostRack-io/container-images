@@ -10,7 +10,8 @@
 #                 number: 37 (SIGRTMIN+3) for systemd, 12 (SIGUSR2) for
 #                 busybox init running OpenRC
 #   base          the official image, by tag and digest; scripts/update-bases.sh
-#                 moves the digests (and a released Alpine's version to its current release)
+#                 moves the digests (and a released Alpine's version
+#                 to its current release)
 #   minimum_memory_bytes
 #                 the smallest memory an instance of the image is given: its
 #                 package manager works and its timers' services run in it

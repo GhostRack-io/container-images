@@ -5,8 +5,9 @@
 # failed, sshd accepts the account's key for root, cron and the package
 # mirrors work, no package update is pending, the services of the image's
 # timers run, the network and DNS are the ones the platform's init set up,
-# each instance makes its own host keys, machine ID and (Arch) pacman keyring and keeps them, and
-# a poweroff inside ends the machine with a poweroff report.
+# each instance makes its own host keys, machine ID and (Arch) pacman
+# keyring and keeps them, and a poweroff inside ends the machine with a
+# poweroff report.
 #
 #   tests/boot.sh --kernel DIR [NAME[:VERSION]...]   (every image without names)
 #

@@ -1,8 +1,8 @@
 # container-images
 
 Stock images for container virtual machines that behave like a small VM:
-the official Debian, Ubuntu, Alpine, Arch Linux, Rocky Linux and AlmaLinux images with
-their own init system (systemd, or OpenRC on Alpine) and OpenSSH, ready to
+the official Debian, Ubuntu, Alpine, Arch Linux, Rocky Linux and
+AlmaLinux images with their own init system (systemd, or OpenRC on Alpine) and OpenSSH, ready to
 run under the init of
 [kernel-linux](https://github.com/ghostrack-io/kernel-linux) (interface
 version 3, `init_system`). They are published on GHCR as
@@ -81,10 +81,10 @@ own at its first boot, before sshd starts (`pacman-key --init` and
 unit's condition reads: a first boot that stopped half way is made again),
 so no two instances share its private master key.
 
-Systemd images leave `/run/lock` empty at build time. Its runtime directories
-are created by tmpfiles after early mounts, so the platform's `/run` seeding
-does not trigger a nonempty mountpoint warning. Structure and boot checks guard
-against shipping build-time lock state.
+Systemd images leave `/run/lock` empty at build time. Its runtime
+directories are created by tmpfiles after early mounts, so the platform's
+`/run` seeding does not trigger a nonempty mountpoint warning. Structure
+and boot checks guard against shipping build-time lock state.
 
 ## Building and testing
 

@@ -171,7 +171,7 @@ needed_level() {
     while IFS= read -r path; do
         podman run --rm --network none --entrypoint /bin/cat "$1" "${path}" < /dev/null > "${work}/object" 2> /dev/null || return 1
         # (readelf exits 1 on the dlopen notes of a recent systemd.)
-        notes=$(readelf -n "${work}/object" 2> /dev/null || true)
+        notes=$(readelf -n "${work}/object" 2> /dev/null) || [[ $? == 1 ]] || return 1
         [[ -n ${notes} ]] || return 1
         needed+=$(sed -n 's/.*x86 ISA needed: //p' <<< "${notes}" | grep -o -E 'x86-64-v[0-9]' | sed 's/^x86-64-v//' || true)$'\n'
     done <<< "${paths}"
