@@ -3,7 +3,7 @@
 # a kernel-linux release (interface version 3, init_system), and checks
 # what an instance does: the image's init reaches running with nothing
 # failed, sshd accepts the account's key for root, cron and the package
-# mirrors work, no package update is pending, the services of the image's
+# mirrors work (reporting the pending package updates), the services of the image's
 # timers run, the network and DNS are the ones the platform's init set up,
 # each instance makes its own host keys, machine ID and (Arch) pacman
 # keyring and keeps them, and a poweroff inside ends the machine with a
@@ -96,13 +96,14 @@ fail() {
 }
 
 # cpu_model LEVEL: QEMU's oldest CPU model with every feature of x86-64
-# level LEVEL, and nothing of the next.
+# level LEVEL, and nothing of the next. PCID is no part of any level, and
+# a nested KVM guest may lack it, which `enforce` refuses.
 cpu_model() {
     case $1 in
         1) echo kvm64 ;;
         2) echo Nehalem ;;
-        3) echo Haswell-noTSX ;;
-        4) echo Skylake-Server-noTSX-IBRS ;;
+        3) echo Haswell-noTSX,-pcid ;;
+        4) echo Skylake-Server-noTSX-IBRS,-pcid ;;
         *) die "no CPU model for x86-64 level $1" ;;
     esac
 }
@@ -352,9 +353,10 @@ check_instance() {
     if [[ ${mirrors} == mirrors ]]; then
         [[ $(value mirrors) == ok ]] || fail "${name}: the package mirrors are not reached"
         case $(value pending_updates) in
-            0) ;;
             '') fail "${name}: the pending package updates are not counted" ;;
-            *) fail "${name}: $(value pending_updates) package updates pending: the image is older than its distribution's updates (rebuild it)" ;;
+            # Mirrors publish at any hour, so a count above zero says when the
+            # test ran, not that the image is broken: reported, not failed.
+            *) echo "  ${name}: $(value pending_updates) package updates pending" ;;
         esac
         local timer
         while read -r timer; do

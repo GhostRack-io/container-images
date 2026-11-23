@@ -112,7 +112,7 @@ image's files on ext4 (`mkfs.ext4 -d`; the init's unpack mode, which the
 platform uses, is kernel-linux's to test). Each image boots three
 instances, all at the image's minimum memory: two from fresh disks, the
 second on QEMU's oldest CPU model of the image's x86-64 level (`kvm64`,
-`Nehalem`, `Haswell-noTSX`), then the first again. Each must reach
+`Nehalem`, `Haswell-noTSX` without PCID), then the first again. Each must reach
 `running` with no failed unit (OpenRC: every service of its runlevels
 started), accept a throwaway key for root over SSH, run cron and
 `crontab`, keep the platform's address, route and name server, and end
@@ -123,8 +123,8 @@ second disk starts with a pacman keyring that a first boot left half made,
 and the instance makes it again (the test needs `debugfs`). The last boot
 also reaches the package
 mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`), finds no
-package update pending (an image built days ago fails here: rebuild it),
-and starts the service of every active systemd timer, each of which must
+reports how many package updates are pending (a count, not a failure:
+mirrors publish at any hour), and starts the service of every active systemd timer, each of which must
 succeed with the system still `running`. It reports each image's boot
 time to `running`, `MemAvailable` at its minimum memory and its
 gzip-compressed size. It needs podman, `qemu-system-x86_64`, `/dev/kvm`,
