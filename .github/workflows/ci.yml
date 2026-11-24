@@ -7,11 +7,13 @@
 # boot test (tests/boot.sh) needs KVM and a kernel-linux build, and does
 # not run here.
 #
-# One failed build stops the publish and the release for every image, the
-# rolling ones (Arch Linux, Alpine edge) included, on purpose: images.json
-# is the complete set of stock images, which the platform imports whole (a
-# release without an image drops it from the stock list), and a release
-# takes its images' dated tags from one run. Rerun the failed jobs.
+# A failed build does not stop the others' release: images.json is the
+# complete set of stock images, which the platform imports whole, so the
+# release carries the failed image's entry from the latest release, its
+# digest tagged again with this release's dated tag (every entry names one
+# release, and the platform sees the image unchanged). An image that no
+# release has yet is left out. The run still shows the failed build; when
+# an image cannot be carried, nothing is released.
 name: CI
 
 on:
@@ -105,7 +107,8 @@ jobs:
 
   publish:
     needs: [prepare, build]
-    if: needs.prepare.outputs.publish == 'true'
+    # Also after a failed build: its leg carries the image's last release.
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -126,9 +129,12 @@ jobs:
         id: slug
         run: echo "slug=$(tr ':.' '--' <<< "$SELECTED")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        id: built
+        continue-on-error: true
         with:
           name: image-${{ steps.slug.outputs.slug }}
       - name: Push to GHCR
+        if: steps.built.outcome == 'success'
         env:
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ github.token }}
@@ -172,7 +178,51 @@ jobs:
           ' "${repository}" "${tag}" "${digest}" > pushed.json
           cat pushed.json
           skopeo logout ghcr.io
+      # Its build failed: the latest release's entry, its digest tagged
+      # again as this release's, or nothing when no release has the image.
+      - name: Carry the latest release's image
+        if: steps.built.outcome != 'success'
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          released=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/images-${DATE}-${NUMBER}" \
+            --jq "[.[] | select(.ref == \"refs/tags/images-${DATE}-${NUMBER}\")] | length")
+          if [[ ${released} != 0 ]]; then
+            echo "images-${DATE}-${NUMBER} is released already; start a new run" >&2
+            exit 1
+          fi
+          latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+          gh release download "${latest}" --repo "$GITHUB_REPOSITORY" --pattern images.json --output latest.json
+          name=${SELECTED%%:*}
+          version=${SELECTED#*:}
+          tag="${version}-${DATE}-${NUMBER}"
+          python3 - "${name}" "${version}" "${tag}" "${latest}" <<'EOF'
+          import json, sys
+          name, version, tag, latest = sys.argv[1:5]
+          entry = next((e for e in json.load(open("latest.json"))["images"]
+                        if e["name"] == name and e["version"] == version), None)
+          if entry is None:
+              print(f"{name}:{version} is in no release yet: left out")
+              sys.exit(0)
+          entry.update(tag=tag, carried_from=latest)
+          json.dump(entry, open("pushed.json", "w"))
+          EOF
+          [[ -f pushed.json ]] || exit 0
+          reference=$(python3 -c 'import json; print(json.load(open("pushed.json"))["reference"])')
+          digest=${reference#*@}
+          repository="ghcr.io/ghostrack-io/${name}"
+          [[ ${reference} == "${repository}@sha256:"* ]] || { echo "${reference} is not in ${repository}" >&2; exit 1; }
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          skopeo copy --retry-times 3 --preserve-digests "docker://${reference}" "docker://${repository}:${tag}"
+          shown=$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${tag}")
+          [[ ${shown} == "${digest}" ]] || { echo "${repository}:${tag} is ${shown}, not ${digest}" >&2; exit 1; }
+          cat pushed.json
+          skopeo logout ghcr.io
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: hashFiles('pushed.json') != ''
         with:
           name: pushed-${{ steps.slug.outputs.slug }}
           path: pushed.json
@@ -181,7 +231,8 @@ jobs:
 
   release:
     needs: [prepare, publish]
-    if: needs.prepare.outputs.publish == 'true'
+    # Every leg of the publish must have pushed or carried its image.
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.publish == 'true' && needs.publish.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -210,10 +261,15 @@ jobs:
           images = []
           for line in sys.stdin:
               name, version = line.split("\t")[:2]
-              if (name, version) not in pushed:
-                  sys.exit(f"{name}:{version} was not pushed")
-              images.append(pushed[(name, version)])
+              if (name, version) in pushed:
+                  images.append(pushed[(name, version)])
+              else:
+                  print(f"{name}:{version} is in no release yet and failed: left out")
+          if not any("carried_from" not in image for image in images):
+              sys.exit("no image was built: nothing to release")
+          carried = [i["name"] + ":" + i["version"] + " (from " + i["carried_from"] + ")" for i in images if "carried_from" in i]
           json.dump({"images": images}, open("images.json", "w"), indent=2)
+          open("carried.txt", "w").write(", ".join(carried))
           '
           cat images.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -235,6 +291,9 @@ jobs:
             echo "${tag} exists already" >&2
             exit 1
           fi
+          notes="The stock images built from ${GITHUB_SHA}, by digest, in images.json; their dated tags end in -${DATE}-${NUMBER}."
+          if [[ -s carried.txt ]]; then
+            notes+=" Their builds failed, so these are carried from an earlier release: $(cat carried.txt)."
+          fi
           gh release create "$tag" images.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Images ${DATE} #${NUMBER}" \
-            --notes "The stock images built from ${GITHUB_SHA}, by digest, in images.json; their dated tags end in -${DATE}-${NUMBER}."
+            --title "Images ${DATE} #${NUMBER}" --notes "${notes}"

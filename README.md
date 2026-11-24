@@ -148,10 +148,12 @@ artifact and as the asset of a release `images-<YYYYMMDD>-<n>`, with the
 same `n`: one more than the day's highest release. A dated tag that a
 release names is never pushed again (a run that fails before its release
 leaves dated tags that no release names, and the next run reuses them). A
-build that fails stops the publish and the release for every image, the
-rolling ones included: the platform imports a release as its complete set of
-stock images, so rerun the failed jobs. The boot test does not run in CI: it
-needs KVM and a kernel-linux build.
+build that fails does not hold back the others: the platform imports a
+release as its complete set of stock images, so the release carries that
+image from the latest release, its digest tagged with this release's dated
+tag, and says so in its notes (`carried_from` in its entry); an image that no
+release has yet is left out. The boot test does not run in CI: it needs KVM
+and a kernel-linux build.
 
 Each entry of `images.json` has the image's `name`, `version`,
 `display_name`, `reference`, `digest`, `tag` (the dated tag, such as
