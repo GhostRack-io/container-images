@@ -9,13 +9,15 @@
 #   stop_signal   the signal on which the image's init shuts down, as a
 #                 number: 37 (SIGRTMIN+3) for systemd, 12 (SIGUSR2) for
 #                 busybox init running OpenRC
-#   base          the official image, by tag and digest; scripts/update-bases.sh
-#                 moves the digests (and a released Alpine's version
-#                 to its current release)
+#   base          the official image, by tag and digest, or the NixOS flake by
+#                 commit. scripts/update-bases.sh moves Docker Hub digests
+#                 (and a released Alpine's version to its current release)
 #   minimum_memory_bytes
 #                 the smallest memory an instance of the image is given: its
 #                 package manager works and its timers' services run in it
 #                 (dnf on EL 9 needs more than 256 MiB without swap)
+#   minimum_disk_bytes
+#                 optional minimum size of an instance's root disk
 #   x86_64_level  the x86-64 microarchitecture level the distribution is
 #                 built for, which the host's CPU must have: 1 (baseline),
 #                 2 (x86-64-v2: SSE4.2, POPCNT) or 3 (x86-64-v3: AVX2, BMI2,
@@ -151,4 +153,16 @@ init = "systemd"
 stop_signal = 37
 base = "docker.io/library/archlinux:base@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899"
 minimum_memory_bytes = 268_435_456 # 256 MiB
+x86_64_level = 1
+
+[[image]]
+name = "nixos"
+version = "26.05"
+display_name = "NixOS 26.05"
+family = "nixos"
+init = "systemd"
+stop_signal = 37
+base = "github:GhostRack-io/nixos-ghostrack/3cb542574d1716829205aba61d6e94b797d59b13"
+minimum_memory_bytes = 268_435_456 # 256 MiB
+minimum_disk_bytes = 1_073_741_824 # 1 GiB
 x86_64_level = 1

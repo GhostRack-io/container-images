@@ -23,7 +23,7 @@ base=docker.io/library/archlinux:base-20250907.0.417472@sha256:fc6a7997e569e600c
 tag=localhost/ghostrack-stale-base/archlinux:rolling
 
 command -v podman > /dev/null || { echo "arch-stale-base.sh: podman is not installed" >&2; exit 1; }
-IFS=$'\t' read -r name version family _init _stop _base display_name memory level < <(select_images archlinux:rolling)
+IFS=$'\t' read -r name version family _init _stop _base display_name memory level _disk < <(select_images archlinux:rolling)
 echo "arch-stale-base.sh: ${name}:${version} from ${base}"
 podman build \
     --platform linux/amd64 \

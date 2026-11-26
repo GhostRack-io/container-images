@@ -7,12 +7,13 @@
 # timers run, the network and DNS are the ones the platform's init set up,
 # each instance makes its own host keys, machine ID and (Arch) pacman
 # keyring and keeps them, and a poweroff inside ends the machine with a
-# poweroff report.
+# poweroff report. For NixOS, check store registration instead of cron
+# and the Nix binary cache instead of package mirrors.
 #
 #   tests/boot.sh --kernel DIR [NAME[:VERSION]...]   (every image without names)
 #
 # Three instances an image, each at the image's minimum memory
-# (images.toml): a first one and a second from fresh disks (an Arch one
+# (images.toml) and declared root disk size, if any: a first one and a second from fresh disks (an Arch one
 # with a half-made pacman keyring on it), then the first again, which
 # reaches the mirrors and starts the service of every timer.
 # The second runs on the oldest CPU model of the image's x86-64 level, the
@@ -67,7 +68,6 @@ done
 [[ -r /dev/kvm && -w /dev/kvm ]] || die "/dev/kvm is not usable"
 selected=$(select_images "$@")
 
-disk_size=2G
 ssh_wait_seconds=180
 poweroff_wait_seconds=60
 machine_timeout=900
@@ -113,7 +113,7 @@ free_port() {
     python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
 }
 
-# make_disk IMAGE DISK: an ext4 disk holding the image's files, owned as
+# make_disk IMAGE DISK SIZE: an ext4 disk holding the image's files, owned as
 # in the image.
 make_disk() {
     # shellcheck disable=SC2016 # expanded by the inner shell
@@ -123,7 +123,7 @@ make_disk() {
         mkfs.ext4 -q -F -L root -d "${mount}" "$2" "$3" > /dev/null || status=$?
         podman image unmount "$1" > /dev/null
         exit "${status}"
-    ' sh "$1" "$2" "${disk_size}"
+    ' sh "$1" "$2" "$3"
 }
 
 # compressed_mib IMAGE: the image's size as a registry stores it: its
@@ -158,12 +158,13 @@ ssh_run() {
 }
 
 # The checks inside an instance, as POSIX sh; the arguments: the init
-# system, then "mirrors" to reach the package mirrors, count the pending
+# system, family, then "mirrors" to reach the package mirrors, count the pending
 # updates and start the service of every timer. Lines of KEY VALUE.
 # shellcheck disable=SC2016 # expanded by the instance's shell
 inside='
 init=$1
-mirrors=${2:-}
+family=$2
+mirrors=${3:-}
 settled() {
     [ "$(cat /run/openrc/softlevel 2> /dev/null)" = default ] \
         && ! rc-status --all 2> /dev/null | grep -q -E "starting|stopping"
@@ -197,7 +198,34 @@ fi
 echo "uptime $(cut -d" " -f1 /proc/uptime)"
 echo "pid1 $(cat /proc/1/comm)"
 echo "mem_available_kib $(awk "/^MemAvailable:/ { print \$2 }" /proc/meminfo)"
-if printf "@daily true\n" | crontab - 2> /dev/null && crontab -l 2> /dev/null | grep -q -x "@daily true" && crontab -r 2> /dev/null; then
+if [ "${family}" = nixos ]; then
+    current=$(readlink -e /run/current-system)
+    if [ ! -e /nix-path-registration ] && [ "$(systemctl show -p Result --value ghostrack-register-store)" = success ] \
+        && [ -n "${current}" ] && [ "$(readlink -e /run/booted-system)" = "${current}" ] \
+        && [ "$(readlink -e /nix/var/nix/profiles/system)" = "${current}" ] \
+        && nix-store --verify-path "${current}"; then
+        echo "nix_registration ok"
+    fi
+    if nix store info --store daemon > /dev/null && nix config show | grep -q -x "require-sigs = true"; then
+        echo "nix_daemon ok"
+    fi
+    config=$(sshd -T | tr "[:upper:]" "[:lower:]")
+    if echo "${config}" | grep -q -x -E "permitrootlogin (prohibit-password|without-password)" \
+        && echo "${config}" | grep -q -x "passwordauthentication no" \
+        && echo "${config}" | grep -q -x "kbdinteractiveauthentication no"; then
+        echo "sshd_policy ok"
+    fi
+    for file in hostname hosts resolv.conf; do
+        if [ "$(findmnt -n -o SOURCE --mountpoint "/etc/${file}")" = "tmpfs[/ghostrack/${file}]" ] \
+            && cmp -s "/etc/${file}" "/run/ghostrack/${file}"; then
+            echo "mount_${file} ok"
+        fi
+    done
+    if [ "${mirrors}" = mirrors ] && getent ahostsv4 cache.nixos.org > /dev/null \
+        && curl --head --fail --silent --show-error --max-time 20 https://cache.nixos.org/nix-cache-info > /dev/null; then
+        echo "nix_cache ok"
+    fi
+elif printf "@daily true\n" | crontab - 2> /dev/null && crontab -l 2> /dev/null | grep -q -x "@daily true" && crontab -r 2> /dev/null; then
     echo "crontab ok"
 else
     echo "crontab fail"
@@ -211,7 +239,7 @@ echo "machine_id $(cat /etc/machine-id 2> /dev/null)"
 if command -v pacman-key > /dev/null; then
     echo "pacman_secret $(gpg --homedir /etc/pacman.d/gnupg --list-secret-keys --with-colons 2> /dev/null | awk -F: "/^fpr/ { print \$10; exit }")"
 fi
-if [ "${mirrors}" = mirrors ]; then
+if [ "${family}" != nixos ] && [ "${mirrors}" = mirrors ]; then
     if command -v apt-get > /dev/null; then
         apt-get -q -q update > /dev/null 2>&1 && echo "mirrors ok" || echo "mirrors fail"
         if simulated=$(apt-get -s -q dist-upgrade 2> /dev/null); then
@@ -304,9 +332,20 @@ PYTHON
         show_logs
         return
     fi
-    ssh_run sh -s "${init}" "${mirrors}" <<< "${inside}" > "${case_dir}/inside.txt" 2>&1 || true
+    ssh_run sh -s "${init}" "${family}" "${mirrors}" <<< "${inside}" > "${case_dir}/inside.txt" 2>&1 || true
     # The instance powers itself off; the session may end before it answers.
-    ssh_run timeout 20 poweroff > /dev/null 2>&1 || true
+    if [[ ${family} == nixos ]]; then
+        if ssh -F /dev/null -v -p "${port}" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o IdentityFile=none -o IdentityAgent=none -o ConnectTimeout=3 \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            root@127.0.0.1 true > "${case_dir}/no-key.txt" 2>&1 \
+            || ! grep -Fq 'Permission denied (publickey).' "${case_dir}/no-key.txt"; then
+            fail "${name}: SSH did not reject a login without a key as public-key-only"
+        fi
+        ssh_run timeout 20 "kill -${stop_signal} 1" > /dev/null 2>&1 || true
+    else
+        ssh_run timeout 20 poweroff > /dev/null 2>&1 || true
+    fi
     waited=0
     while kill -0 "${qemu_pid}" 2> /dev/null && [[ ${waited} -lt $((poweroff_wait_seconds * 2)) ]]; do
         sleep 0.5
@@ -337,8 +376,21 @@ check_instance() {
         systemd) [[ $(value pid1) == systemd ]] || fail "${name}: PID 1 is $(value pid1)" ;;
         openrc) [[ $(value pid1) == init ]] || fail "${name}: PID 1 is $(value pid1)" ;;
     esac
-    [[ $(value cron_daemon) == active ]] || fail "${name}: cron is $(value cron_daemon)"
-    [[ $(value crontab) == ok ]] || fail "${name}: crontab does not work"
+    if [[ ${family} == nixos ]]; then
+        [[ $(value nix_registration) == ok ]] || fail "${name}: the Nix store or system profile is not registered"
+        [[ $(value nix_daemon) == ok ]] || fail "${name}: the Nix daemon or signature policy is unavailable"
+        [[ $(value sshd_policy) == ok ]] || fail "${name}: sshd does not enforce the key-only policy"
+        local file
+        for file in hostname hosts resolv.conf; do
+            [[ $(value "mount_${file}") == ok ]] || fail "${name}: /etc/${file} is not the platform's bind mount"
+        done
+        if [[ ${mirrors} == mirrors ]]; then
+            [[ $(value nix_cache) == ok ]] || fail "${name}: DNS or trusted HTTPS to cache.nixos.org failed"
+        fi
+    else
+        [[ $(value cron_daemon) == active ]] || fail "${name}: cron is $(value cron_daemon)"
+        [[ $(value crontab) == ok ]] || fail "${name}: crontab does not work"
+    fi
     [[ $(value hostname) == "${hostname}" ]] || fail "${name}: the host name is $(value hostname), not ${hostname}"
     [[ $(value eth0) == 10.115.0.15/24 ]] || fail "${name}: eth0 has $(value eth0)"
     [[ $(value route) == "default via 10.115.0.1 dev eth0"* ]] || fail "${name}: the default route is $(value route)"
@@ -350,7 +402,7 @@ check_instance() {
     if [[ ${init} == systemd && ! $(value machine_id) =~ ^[0-9a-f]{32}$ ]]; then
         fail "${name}: the machine ID is '$(value machine_id)'"
     fi
-    if [[ ${mirrors} == mirrors ]]; then
+    if [[ ${family} != nixos && ${mirrors} == mirrors ]]; then
         [[ $(value mirrors) == ok ]] || fail "${name}: the package mirrors are not reached"
         case $(value pending_updates) in
             '') fail "${name}: the pending package updates are not counted" ;;
@@ -374,6 +426,9 @@ check_instance() {
     if [[ ${reports} != 1 ]] || ! grep -a -q -E '(gigahost|ghostrack)-init: report \{"v":3,"event":"exited","code":null,"signal":2,"reason":"poweroff"\}' "${case_dir}/serial.log"; then
         fail "${name}: not one poweroff report: $(grep -a -o '"event":"exited".*' "${case_dir}/serial.log" | tr '\n' ' ')"
     fi
+    if [[ ${family} == nixos ]] && ! grep -a -q -F 'Reached target System Halt.' "${case_dir}/hvc.log"; then
+        fail "${name}: systemd did not reach halt after the guest stop signal"
+    fi
     echo "  ${name}: $(value state) at $(value boot_seconds) s (uptime $(value uptime) s at login), MemAvailable $(value mem_available_kib) KiB"
     [[ ${image_failures} == "${before}" ]] || show_logs
 }
@@ -388,14 +443,18 @@ show_logs() {
 }
 
 summary=()
-while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level; do
+while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level disk; do
     image=$(image_tag "${name}" "${version}")
     memory_mib=$((memory / 1048576))
     image_failures=0
     echo "boot.sh: ${image} (${display_name})"
     podman image exists "${image}" || { fail "${image} is not built"; continue; }
     slug=${name}-${version//./-}
-    make_disk "${image}" "${work}/${slug}.img"
+    disk_size=2G
+    if [[ ${disk} != - ]]; then
+        disk_size="$((disk / 1048576))M"
+    fi
+    make_disk "${image}" "${work}/${slug}.img" "${disk_size}"
     cp --sparse=always "${work}/${slug}.img" "${work}/${slug}-a.img"
     mv "${work}/${slug}.img" "${work}/${slug}-b.img"
     if [[ ${family} == arch ]]; then

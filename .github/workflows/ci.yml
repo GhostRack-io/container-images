@@ -169,12 +169,15 @@ jobs:
           # good; the dated tag is beside it.
           select_images "$SELECTED" | python3 -c '
           import json, sys
-          name, version, _family, init, stop, _base, display, memory, level = sys.stdin.read().rstrip("\n").split("\t")
+          name, version, _family, init, stop, _base, display, memory, level, disk = sys.stdin.read().rstrip("\n").split("\t")
           repository, tag, digest = sys.argv[1:4]
-          json.dump({"name": name, "version": version, "display_name": display,
+          entry = {"name": name, "version": version, "display_name": display,
                      "reference": f"{repository}@{digest}", "digest": digest, "tag": tag,
                      "init": init, "stop_signal": int(stop), "ssh_user": "root",
-                     "minimum_memory_bytes": int(memory), "x86_64_level": int(level)}, sys.stdout)
+                     "minimum_memory_bytes": int(memory), "x86_64_level": int(level)}
+          if disk != "-":
+              entry["minimum_disk_bytes"] = int(disk)
+          json.dump(entry, sys.stdout)
           ' "${repository}" "${tag}" "${digest}" > pushed.json
           cat pushed.json
           skopeo logout ghcr.io

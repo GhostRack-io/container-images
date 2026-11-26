@@ -2,8 +2,10 @@
 
 Stock images for container virtual machines that behave like a small VM:
 the official Debian, Ubuntu, Alpine, Arch Linux, Rocky Linux and
-AlmaLinux images with their own init system (systemd, or OpenRC on Alpine) and OpenSSH, ready to
-run under the init of
+AlmaLinux images, plus NixOS built from the
+[nixos-ghostrack flake](https://github.com/GhostRack-io/nixos-ghostrack).
+They include their own init system (systemd, or OpenRC on Alpine) and
+OpenSSH, ready to run under the init of
 [kernel-linux](https://github.com/ghostrack-io/kernel-linux) (interface
 version 3, `init_system`). They are published on GHCR as
 `ghcr.io/ghostrack-io/<name>:<version>`.
@@ -24,12 +26,15 @@ version 3, `init_system`). They are published on GHCR as
 | AlmaLinux 10 | `almalinux:10` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 3 |
 | AlmaLinux 9 | `almalinux:9` | systemd | 37 (`SIGRTMIN+3`) | 512 MiB | 2 |
 | Arch Linux | `archlinux:rolling` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 1 |
+| NixOS 26.05 | `nixos:26.05` | systemd | 37 (`SIGRTMIN+3`) | 256 MiB | 1 |
+
+NixOS needs a root disk of at least 1 GiB.
 
 Arch Linux is a rolling release, and Alpine Linux edge is Alpine's
 development branch; CI rebuilds both weekly, with the other images.
 
-[`images.toml`](images.toml) lists them with their bases, the official
-images on Docker Hub, pinned by digest. Each image's command is
+[`images.toml`](images.toml) lists their sources. Docker Hub images are pinned by digest and the
+NixOS flake is pinned by commit. Each image's command is
 `/sbin/init`, run as the container's init system; its `STOPSIGNAL` is the
 signal on which that init shuts down cleanly (the kernel delivers no other
 to it). Labels: `org.opencontainers.image.source`, `.title`, `.version`,
@@ -45,7 +50,7 @@ POPCNT), 3 is x86-64-v3 (AVX2, BMI2, FMA, MOVBE). Rocky Linux 10 and
 AlmaLinux 10 are built for x86-64-v3, and their init dies at once on a
 CPU without it (a pre-Haswell one, for instance).
 
-What each image holds: the init system (with D-Bus on systemd), the
+What the Docker Hub-based images hold: the init system (with D-Bus on systemd), the
 OpenSSH server, `iproute2`, `ping`, CA certificates, `curl`, `less`, a
 small `vi`, `procps`, `sudo`, cron and the time zone data, and the
 distribution's package manager set up for its usual mirrors. The base's
@@ -64,16 +69,22 @@ gettys (the console is the machine's log), `systemd-networkd`,
 run, and the hourly refresh takes about 190 MiB); Alpine runs no getty
 and no `networking` service.
 
+NixOS activates its system from the Nix store at boot, registers the
+store on the first boot and creates the system profile. Nix uses its
+normal signed binary cache. Keep system configuration in a flake with
+its own lock file.
+
 SSH: root logs in with the keys the platform writes to
 `/root/.ssh/authorized_keys`, never with a password
 (`PermitRootLogin prohibit-password`, `PasswordAuthentication no`,
 `KbdInteractiveAuthentication no`). sshd starts at boot.
 
-Per instance: an image holds no SSH host keys and an empty
+Per instance: an image holds no SSH host keys or populated
 `/etc/machine-id`. Each instance makes its own host keys at its first
 boot, before sshd starts (`ghostrack-ssh-host-keys.service` on Debian and
 Ubuntu, `sshd-keygen@.service` on Rocky and Alma, `sshdgenkeys.service` on
-Arch, sshd's OpenRC service on Alpine), and systemd makes its machine ID;
+Arch, sshd's OpenRC service on Alpine, and `sshd-keygen.service` on
+NixOS), and systemd makes its machine ID;
 both are kept on the instance's disk from then on. An Arch image holds no
 pacman keyring either: `ghostrack-pacman-init.service` makes the instance's
 own at its first boot, before sshd starts (`pacman-key --init` and
@@ -95,7 +106,9 @@ tests/boot.sh --kernel DIR [NAME[:VERSION]...]
 tests/arch-stale-base.sh                   # Arch Linux from an old base
 ```
 
-A bare name selects every version of it; no name selects every image.
+A bare name selects every version of it. With no name, the scripts
+select every image. The NixOS build uses a pinned Nix container and
+requires `zstd` to unpack the root archive.
 
 `tests/structure.sh` checks that an image holds no host key, machine ID,
 random seed, pacman keyring or password hash, that the SSH policy is in force
@@ -103,7 +116,9 @@ random seed, pacman keyring or password hash, that the SSH policy is in force
 units, the services enabled at boot, the init at `/sbin/init`, the
 packages above, that its C library and init need the x86-64 level
 `images.toml` gives (their `x86 ISA needed` notes, read with `readelf`),
-and the image's labels, command and stop signal.
+and the image's labels, command and stop signal. For NixOS it checks the
+single-layer OCI image and the root archive before activation, including
+the root account, store registration file, and init target.
 
 `tests/boot.sh` boots each image as a container machine under QEMU with
 KVM, with a kernel-linux release's `bzImage` and `initramfs.cpio.zst` in
@@ -122,12 +137,15 @@ and the first must keep its own across its two boots; the Arch image's
 second disk starts with a pacman keyring that a first boot left half made,
 and the instance makes it again (the test needs `debugfs`). The last boot
 also reaches the package
-mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`), finds no
+mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`),
 reports how many package updates are pending (a count, not a failure:
 mirrors publish at any hour), and starts the service of every active systemd timer, each of which must
 succeed with the system still `running`. It reports each image's boot
 time to `running`, `MemAvailable` at its minimum memory and its
-gzip-compressed size. It needs podman, `qemu-system-x86_64`, `/dev/kvm`,
+gzip-compressed size. The NixOS boots use the declared root disk floor.
+They verify store registration, the system profile, the Nix daemon,
+key-only SSH, the platform's network mounts and shutdown on signal 37.
+The last NixOS boot also resolves and reaches `cache.nixos.org` over HTTPS. It needs podman, `qemu-system-x86_64`, `/dev/kvm`,
 `mkfs.ext4`, `ssh` and network access.
 
 `tests/arch-stale-base.sh` builds the Arch Linux image from the official
@@ -158,20 +176,24 @@ and a kernel-linux build.
 Each entry of `images.json` has the image's `name`, `version`,
 `display_name`, `reference`, `digest`, `tag` (the dated tag, such as
 `13-20261019-1`), `init`, `stop_signal`, `ssh_user`,
-`minimum_memory_bytes` and `x86_64_level`. The `reference` is
+`minimum_memory_bytes` and `x86_64_level`. An entry with a root disk
+floor also includes `minimum_disk_bytes`. The `reference` is
 `ghcr.io/ghostrack-io/<name>@sha256:<hex>`, repository and digest
 without a tag, which names one image for good.
 
 A monthly [workflow](.github/workflows/update-bases.yml) runs
 `scripts/update-bases.sh`, which moves each base to the digest its tag
 names now (and a released Alpine to its current release; Alpine edge keeps its tag), and opens a pull request
-when one moved.
+when one moved. For NixOS updates, update the nixpkgs lock in
+[nixos-ghostrack](https://github.com/GhostRack-io/nixos-ghostrack), rebuild
+and boot-test the image, then advance the flake commit in `images.toml`
+by pull request.
 
 For the maintainer:
 
 - A package GHCR creates on a workflow's first push may start private.
   Set each package (`debian`, `ubuntu`, `alpine`, `archlinux`, `rockylinux`,
-  `almalinux`) public once, in its package settings; the images are meant
+  `almalinux`, `nixos`) public once, in its package settings; the images are meant
   to be pulled without credentials.
 - GitHub turns a public repository's scheduled workflows off after 60
   days without activity in it; turn them on again in the Actions tab.

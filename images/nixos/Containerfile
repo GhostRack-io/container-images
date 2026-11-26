@@ -1,0 +1,18 @@
+# Package the root archive built by the locked nixos-ghostrack flake.
+FROM scratch
+ARG VERSION
+ARG TITLE
+ARG REVISION
+ARG MINIMUM_MEMORY_BYTES
+ARG X86_64_LEVEL
+ADD root.tar /
+LABEL org.opencontainers.image.source="https://github.com/ghostrack-io/container-images" \
+      org.opencontainers.image.title="${TITLE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      io.ghostrack.init-system="systemd" \
+      io.ghostrack.ssh-user="root" \
+      io.ghostrack.minimum-memory-bytes="${MINIMUM_MEMORY_BYTES}" \
+      io.ghostrack.x86-64-level="${X86_64_LEVEL}"
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

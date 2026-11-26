@@ -1,5 +1,5 @@
 #!/bin/bash
-# Resolves each base of images.toml to the digest its tag names on Docker
+# Resolves each Docker Hub base of images.toml to the digest its tag names on Docker
 # Hub now, and rewrites images.toml when one moved. Alpine follows its
 # current release: when a newer one is out, the entry of a release (a
 # MAJOR.MINOR tag) moves its version, display name and base tag to it.
@@ -46,7 +46,9 @@ print(max(tags, key=lambda t: tuple(map(int, t.split(".")))))'
 }
 
 changes=()
-while IFS=$'\t' read -r -u 3 name version family _init _stop base display_name _memory _level; do
+tsv=$(images_tsv)
+while IFS=$'\t' read -r -u 3 name version family _init _stop base display_name _memory _level _disk; do
+    [[ ${family} != nixos ]] || continue
     reference=${base%@*}
     path=${reference#docker.io/}
     repository=${path%:*}
@@ -66,7 +68,7 @@ while IFS=$'\t' read -r -u 3 name version family _init _stop base display_name _
         echo "${name}:${version}: ${base} -> ${new_base}"
         changes+=("${name}" "${version}" "${new_version}" "${new_display}" "${new_base}")
     fi
-done 3< <(images_tsv)
+done 3<<< "${tsv}"
 
 [[ ${#changes[@]} == 0 ]] && exit 0
 python3 - "${repo}/images.toml" "${changes[@]}" << 'PYTHON'

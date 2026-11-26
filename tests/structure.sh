@@ -179,7 +179,75 @@ needed_level() {
     echo "${needed:-1}"
 }
 
-while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level; do
+# Read the saved OCI root archive before NixOS activation creates /bin/sh,
+# /etc/ssh and /run/current-system. Never extract or execute it on the host.
+nixos_root_problems() {
+    local image=$1
+    rm -rf "${work}/oci"
+    podman save --quiet --format oci-dir -o "${work}/oci" "${image}" || return 1
+    python3 - "${work}/oci" << 'PYTHON'
+import json, re, sys, tarfile
+from pathlib import Path
+
+oci = Path(sys.argv[1])
+def blob(descriptor):
+    algorithm, digest = descriptor["digest"].split(":")
+    return oci / "blobs" / algorithm / digest
+
+index = json.loads((oci / "index.json").read_text())
+manifest = json.loads(blob(index["manifests"][0]).read_text())
+layers = manifest["layers"]
+if len(layers) != 1:
+    sys.exit("the NixOS image does not have one filesystem layer")
+
+with tarfile.open(blob(layers[0])) as archive:
+    members = {member.name.removeprefix("./"): member for member in archive}
+
+    def root_file(name):
+        member = members.get(name)
+        return member and member.isfile() and member.uid == member.gid == 0 and member.size > 0
+
+    if not root_file("etc/passwd"):
+        print("/etc/passwd is missing or invalid")
+    else:
+        passwd = archive.extractfile(members["etc/passwd"]).read()
+        roots = [line.split(b":") for line in passwd.splitlines() if line.startswith(b"root:")]
+        if len(roots) != 1 or len(roots[0]) != 7 or roots[0][1:4] != [b"x", b"0", b"0"] or roots[0][5] != b"/root":
+            print("/etc/passwd has no root entry with UID/GID 0 and home /root")
+
+    root = members.get("root")
+    if not root or not root.isdir() or (root.uid, root.gid, root.mode) != (0, 0, 0o700):
+        print("/root is not a private directory owned by root")
+
+    if not root_file("nix-path-registration"):
+        print("/nix-path-registration is missing, empty or invalid")
+
+    init = members.get("sbin/init")
+    if not init or not init.issym() or not re.fullmatch(r"/nix/store/[^/]+/init", init.linkname):
+        print("/sbin/init is not a symlink to an init in the Nix store")
+    else:
+        target = init.linkname[1:]
+        if not root_file(target) or not members[target].mode & 0o111:
+            print("/sbin/init does not point to an executable in the archive")
+
+    for name, member in members.items():
+        if name.startswith(("etc/ssh/ssh_host_", "root/.ssh/")) or name in {
+            "var/lib/dbus/machine-id", "var/lib/systemd/random-seed", "var/lib/seedrng",
+            "var/lib/systemd/credential.secret", "nix/var/nix/db/db.sqlite",
+        }:
+            print(f"/{name} holds instance-specific state")
+        if name == "etc/machine-id" and (not member.isfile() or member.size):
+            print("/etc/machine-id is not an empty file")
+        if name.startswith(("run/lock/", "boot/vmlinuz")) or name == "run/current-system":
+            print(f"/{name} is present before activation")
+    if root_file("etc/shadow"):
+        shadow = archive.extractfile(members["etc/shadow"]).read()
+        if any(re.match(rb"[^:]+:[!*]*\$", line) for line in shadow.splitlines()):
+            print("/etc/shadow contains a password hash")
+PYTHON
+}
+
+while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_name memory level _disk; do
     image=${STRUCTURE_IMAGE:-$(image_tag "${name}" "${version}")}
     before=${failures}
     echo "structure.sh: ${image} (${display_name})"
@@ -187,9 +255,10 @@ while IFS=$'\t' read -r -u 3 name version family init stop_signal _base display_
         fail "${image} is not built (scripts/build.sh ${name}:${version})"
         continue
     fi
-    problems=$(python3 - "${version}" "${display_name}" "${init}" "${stop_signal}" "${memory}" "${level}" 3<<< "${config}" << 'PYTHON'
-import json, os, signal, sys
-version, title, init, stop, memory, level = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]
+    problems=$(python3 - "${version}" "${display_name}" "${init}" "${stop_signal}" "${memory}" "${level}" "${family}" 3<<< "${config}" << 'PYTHON'
+import json, os, re, signal, sys
+version, title, init, stop, memory, level, family = sys.argv[1:]
+stop = int(stop)
 image = json.load(os.fdopen(3))[0]
 config = image.get("Config") or {}
 labels = config.get("Labels") or {}
@@ -209,11 +278,14 @@ if config.get("Cmd") != ["/sbin/init"] or config.get("Entrypoint"):
     print(f"the command is {config.get('Entrypoint')} {config.get('Cmd')}, not /sbin/init alone")
 names = {"SIGRTMIN+3": signal.SIGRTMIN + 3, "SIGUSR2": signal.SIGUSR2}
 got = config.get("StopSignal", "")
-if names.get(got, -1) != stop:
+actual = names.get(got, int(got) if str(got).isdecimal() else -1)
+if actual != stop:
     print(f"the stop signal is {got!r}, not signal {stop}")
 for key in ("Volumes", "ExposedPorts"):
     if config.get(key):
         print(f"the image declares {key}: {sorted(config[key])}")
+if family == "nixos" and not re.fullmatch(r"[0-9a-f]{40}|unknown", labels.get("org.opencontainers.image.revision", "")):
+    print("the NixOS image has no source revision label")
 if image.get("Architecture") != "amd64" or image.get("Os") != "linux":
     print(f"the image is for {image.get('Os')}/{image.get('Architecture')}")
 PYTHON
@@ -221,6 +293,17 @@ PYTHON
     while IFS= read -r problem; do
         [[ -n ${problem} ]] && fail "${problem}"
     done <<< "${problems}"
+    if [[ ${family} == nixos ]]; then
+        if problems=$(nixos_root_problems "${image}"); then
+            while IFS= read -r problem; do
+                [[ -n ${problem} ]] && fail "${problem}"
+            done <<< "${problems}"
+        else
+            fail "the NixOS root archive could not be checked"
+        fi
+        [[ ${failures} == "${before}" ]] && echo "  ok"
+        continue
+    fi
     if ! needed=$(needed_level "${image}"); then
         fail "the C library and the init could not be read"
     elif [[ ${needed} != "${level}" ]]; then
