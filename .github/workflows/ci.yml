@@ -87,6 +87,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: NixOS archive validation fixtures
+        if: startsWith(matrix.image, 'nixos:')
+        run: tests/nixos-archive.sh
       - name: Build
         run: scripts/build.sh "$SELECTED"
       - name: Structure tests

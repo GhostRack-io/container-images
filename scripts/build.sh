@@ -35,14 +35,23 @@ nixos_root() {
     zstd -d -q -o "${directory}/root.tar" -- "${directory}/root.tar.zst"
     tar -tf "${directory}/root.tar" > /dev/null
     python3 - "${directory}/root.tar" << 'PYTHON'
-import sys
+import sys, tarfile
 
-with open(sys.argv[1], "rb") as archive:
-    if archive.seek(0, 2) < 1024 or archive.tell() % 512:
+end_size = 2 * tarfile.BLOCKSIZE
+with open(sys.argv[1], "rb") as root:
+    size = root.seek(0, 2)
+    if size < end_size or size % tarfile.BLOCKSIZE:
         sys.exit("build.sh: invalid root archive size")
-    archive.seek(-1024, 2)
-    if archive.read() != bytes(1024):
+    root.seek(0)
+    with tarfile.open(fileobj=root, mode="r:") as archive:
+        for _ in archive:
+            pass
+        # The terminator starts after the final member, including its padding.
+        root.seek(archive.offset)
+    if root.read(end_size) != bytes(end_size):
         sys.exit("build.sh: root archive is missing its end blocks")
+    if any(block.strip(b"\0") for block in iter(lambda: root.read(64 * 1024), b"")):
+        sys.exit("build.sh: root archive has nonzero data after its end blocks")
 PYTHON
     sha256sum < "${directory}/root.tar.zst" | awk '{ print "build.sh: root archive sha256 " $1 }'
     rm -f "${directory}/root.tar.zst"

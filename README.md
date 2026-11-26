@@ -104,6 +104,7 @@ scripts/build.sh [NAME[:VERSION]...]       # podman; tags localhost/ghostrack-im
 tests/structure.sh [NAME[:VERSION]...]     # checks the built images without booting them
 tests/boot.sh --kernel DIR [NAME[:VERSION]...]
 tests/arch-stale-base.sh                   # Arch Linux from an old base
+tests/nixos-archive.sh                     # NixOS archive validation fixtures
 ```
 
 A bare name selects every version of it. With no name, the scripts
@@ -129,24 +130,27 @@ instances, all at the image's minimum memory: two from fresh disks, the
 second on QEMU's oldest CPU model of the image's x86-64 level (`kvm64`,
 `Nehalem`, `Haswell-noTSX` without PCID), then the first again. Each must reach
 `running` with no failed unit (OpenRC: every service of its runlevels
-started), accept a throwaway key for root over SSH, run cron and
-`crontab`, keep the platform's address, route and name server, and end
-with a `poweroff` report when powered off from inside; the two instances
-must have different host keys, machine IDs and (Arch) pacman keyrings,
-and the first must keep its own across its two boots; the Arch image's
-second disk starts with a pacman keyring that a first boot left half made,
-and the instance makes it again (the test needs `debugfs`). The last boot
-also reaches the package
-mirrors (`apt-get update`, `dnf makecache`, `apk update`, `pacman -Sy`),
-reports how many package updates are pending (a count, not a failure:
-mirrors publish at any hour), and starts the service of every active systemd timer, each of which must
-succeed with the system still `running`. It reports each image's boot
-time to `running`, `MemAvailable` at its minimum memory and its
-gzip-compressed size. The NixOS boots use the declared root disk floor.
-They verify store registration, the system profile, the Nix daemon,
-key-only SSH, the platform's network mounts and shutdown on signal 37.
-The last NixOS boot also resolves and reaches `cache.nixos.org` over HTTPS. It needs podman, `qemu-system-x86_64`, `/dev/kvm`,
-`mkfs.ext4`, `ssh` and network access.
+started), accept a throwaway key for root over SSH, keep the platform's
+address, route and name server, and finish with a `poweroff` report. The
+two fresh disks must produce different host keys and (on systemd) machine
+IDs, and the first must keep them across its two boots.
+
+The Docker Hub-based images must also run cron and `crontab`. On the last
+boot they reach the package mirrors (`apt-get update`, `dnf makecache`,
+`apk update`, `pacman -Sy`) and report how many package updates are pending.
+On systemd, the service of every active timer must succeed with the system
+still `running`. Arch also checks per-instance pacman keyrings and tests
+recovery on the second disk, which starts with a half-made keyring (this
+needs `debugfs`).
+
+The NixOS boots use the declared root disk floor. They verify store
+registration, the system profile, the Nix daemon, key-only SSH, the
+platform's network mounts and shutdown on signal 37. The last NixOS boot
+also resolves and reaches `cache.nixos.org` over HTTPS.
+
+The test reports each image's boot time to `running`, `MemAvailable` at its
+minimum memory and its gzip-compressed size. It needs podman,
+`qemu-system-x86_64`, `/dev/kvm`, `mkfs.ext4`, `ssh` and network access.
 
 `tests/arch-stale-base.sh` builds the Arch Linux image from the official
 base of 2025-09-07 and runs `tests/structure.sh` on it. The build's upgrade
@@ -158,8 +162,7 @@ it). It downloads about a gigabyte and is not part of CI.
 
 [CI](.github/workflows/ci.yml) builds every image and runs
 `tests/structure.sh` on pull requests and pushes. On `main` (a push, a
-weekly scheduled run, which rebuilds the images with their distributions'
-updates whether or not a base moved, or a run started by hand) it then
+weekly scheduled run, or a run started by hand) it then
 pushes the tested images to `ghcr.io/ghostrack-io/<name>:<version>` and
 `:<version>-<YYYYMMDD>-<n>`, and writes `images.json` as a workflow
 artifact and as the asset of a release `images-<YYYYMMDD>-<n>`, with the
@@ -172,6 +175,10 @@ image from the latest release, its digest tagged with this release's dated
 tag, and says so in its notes (`carried_from` in its entry); an image that no
 release has yet is left out. The boot test does not run in CI: it needs KVM
 and a kernel-linux build.
+
+The weekly run picks up distribution package updates for the Docker
+Hub-based images even when their base pins stay the same. The NixOS image
+rebuilds from the flake's pinned nixpkgs lock.
 
 Each entry of `images.json` has the image's `name`, `version`,
 `display_name`, `reference`, `digest`, `tag` (the dated tag, such as

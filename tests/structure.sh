@@ -240,10 +240,14 @@ with tarfile.open(blob(layers[0])) as archive:
             print("/etc/machine-id is not an empty file")
         if name.startswith(("run/lock/", "boot/vmlinuz")) or name == "run/current-system":
             print(f"/{name} is present before activation")
-    if root_file("etc/shadow"):
-        shadow = archive.extractfile(members["etc/shadow"]).read()
-        if any(re.match(rb"[^:]+:[!*]*\$", line) for line in shadow.splitlines()):
-            print("/etc/shadow contains a password hash")
+    shadow = members.get("etc/shadow")
+    if shadow is not None:
+        if not shadow.isfile() or (shadow.uid, shadow.gid) != (0, 0):
+            print("/etc/shadow is not a regular file owned by root")
+        else:
+            contents = archive.extractfile(shadow).read()
+            if any(re.match(rb"[^:]+:[!*]*\$", line) for line in contents.splitlines()):
+                print("/etc/shadow contains a password hash")
 PYTHON
 }
 

@@ -17,7 +17,7 @@
 #                 package manager works and its timers' services run in it
 #                 (dnf on EL 9 needs more than 256 MiB without swap)
 #   minimum_disk_bytes
-#                 optional minimum size of an instance's root disk
+#                 minimum size of an instance's root disk, required for NixOS
 #   x86_64_level  the x86-64 microarchitecture level the distribution is
 #                 built for, which the host's CPU must have: 1 (baseline),
 #                 2 (x86-64-v2: SSE4.2, POPCNT) or 3 (x86-64-v3: AVX2, BMI2,

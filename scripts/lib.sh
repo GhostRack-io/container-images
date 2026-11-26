@@ -40,6 +40,8 @@ for image in images:
     if image["stop_signal"] != STOP[image["init"]]:
         die(f"{key}: the stop signal of {image['init']} is {STOP[image['init']]}")
     if image["family"] == "nixos":
+        if DISK not in image:
+            die(f"{key}: {DISK} is required for NixOS")
         if not re.fullmatch(r"github:GhostRack-io/nixos-ghostrack/[0-9a-f]{40}", image["base"]):
             die(f"{key}: the base is not the GhostRack-io/nixos-ghostrack flake pinned by commit")
     elif not re.fullmatch(r"docker\.io/[a-z0-9._/-]+:[a-z0-9._-]+@sha256:[0-9a-f]{64}", image["base"]):
