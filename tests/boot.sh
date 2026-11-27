@@ -193,6 +193,16 @@ else
     done
     rc-status --crashed 2> /dev/null | awk "NF { print \"failed\", \$1 }"
     if pidof crond > /dev/null; then echo "cron_daemon active"; else echo "cron_daemon inactive"; fi
+    # A service that needs net, as packaged daemons do, starts.
+    printf "%s\n" "#!/sbin/openrc-run" "depend() { need net; }" "start() { return 0; }" > /etc/init.d/ghostrack-needs-net
+    chmod 755 /etc/init.d/ghostrack-needs-net
+    if rc-service ghostrack-needs-net start > /dev/null 2>&1 && rc-service ghostrack-needs-net status > /dev/null 2>&1; then
+        echo "needs_net started"
+    else
+        echo "needs_net failed"
+    fi
+    rc-service ghostrack-needs-net stop > /dev/null 2>&1
+    rm -f /etc/init.d/ghostrack-needs-net
 fi
 echo "uptime $(cut -d" " -f1 /proc/uptime)"
 echo "pid1 $(cat /proc/1/comm)"
@@ -335,7 +345,10 @@ check_instance() {
     [[ -z ${failed} ]] || fail "${name}: failed: ${failed}"
     case ${init} in
         systemd) [[ $(value pid1) == systemd ]] || fail "${name}: PID 1 is $(value pid1)" ;;
-        openrc) [[ $(value pid1) == init ]] || fail "${name}: PID 1 is $(value pid1)" ;;
+        openrc)
+            [[ $(value pid1) == init ]] || fail "${name}: PID 1 is $(value pid1)"
+            [[ $(value needs_net) == started ]] || fail "${name}: a service that needs net does not start"
+            ;;
     esac
     [[ $(value cron_daemon) == active ]] || fail "${name}: cron is $(value cron_daemon)"
     [[ $(value crontab) == ok ]] || fail "${name}: crontab does not work"

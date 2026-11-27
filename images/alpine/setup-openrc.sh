@@ -20,6 +20,12 @@ for service in killprocs savecache; do
     rc-update add "${service}" shutdown
 done
 
+# The platform's init has brought the network up, so OpenRC is told that
+# net is provided: a service that needs net (i2pd, for one) then starts
+# without the networking service, which has no /etc/network/interfaces.
+sed -i 's/^#*rc_provide=.*/rc_provide="net"/' /etc/rc.conf
+grep -q -x 'rc_provide="net"' /etc/rc.conf || echo 'rc_provide="net"' >> /etc/rc.conf
+
 install -d -m 0755 /etc/ssh/sshd_config.d
 install -m 0644 "${build}/common/sshd-ghostrack.conf" /etc/ssh/sshd_config.d/00-ghostrack.conf
 

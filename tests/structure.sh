@@ -103,6 +103,7 @@ else
     for level in /etc/runlevels/*; do
         [ -e "${level}/networking" ] && fail "networking is in the runlevel ${level##*/}"
     done
+    grep -q -x "rc_provide=\"net\"" /etc/rc.conf || fail "/etc/rc.conf does not provide net"
     grep -q "^root:[!]" /etc/shadow && fail "root is locked, which refuses its keys"
     # Alpine edge stays on edge; a release stays on its release.
     if [ "${version}" = edge ]; then
