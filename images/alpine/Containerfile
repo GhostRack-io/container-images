@@ -17,7 +17,7 @@ RUN --mount=type=bind,source=.,target=/tmp/ghostrack-build \
     apk add --no-cache \
         openrc busybox-openrc \
         openssh-server openssh-sftp-server openssh-client \
-        iproute2 ca-certificates curl less procps-ng sudo tzdata; \
+        iproute2 ca-certificates curl less procps-ng sudo tzdata logrotate; \
     sh /tmp/ghostrack-build/images/alpine/setup-openrc.sh
 LABEL org.opencontainers.image.source="https://github.com/ghostrack-io/container-images" \
       org.opencontainers.image.title="${TITLE}" \

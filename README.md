@@ -50,7 +50,8 @@ OpenSSH server, `iproute2`, `ping`, CA certificates, `curl`, `less`, a
 small `vi`, `procps`, `sudo`, cron and the time zone data, and the
 distribution's package manager set up for its usual mirrors. The base's
 packages are upgraded when an image is built, so it holds its
-distribution's updates of that day. There is no
+distribution's updates of that day. Alpine also holds `logrotate`,
+which runs its packages' rules in `/etc/logrotate.d` daily. There is no
 kernel, boot loader, firmware, NetworkManager or cloud-init: the
 platform's init configures `eth0`, the host name, `/etc/hosts` and
 `/etc/resolv.conf` before the image's init starts, and nothing in the
